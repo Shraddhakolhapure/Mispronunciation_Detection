@@ -1,0 +1,140 @@
+import tkinter as tk
+import speech_recognition as sr
+import pyttsx3
+import nltk
+from nltk.corpus import cmudict
+from matplotlib import pyplot as plt
+import numpy as np
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+from nltk.translate.bleu_score import sentence_bleu
+
+# Load the CMU Pronouncing Dictionary
+nltk.download('cmudict')
+pronouncing_dict = cmudict.dict()
+
+results = []  # Define results globally
+
+# Function to detect mispronunciations
+def detect_mispronunciations(recognized_text):
+    recognized_words = recognized_text.lower().split()
+    mispronounced_words = []
+    for word in recognized_words:
+        # Check if the word is in the CMU Pronouncing Dictionary
+        if word in pronouncing_dict:
+            # Extract the phonetic pronunciation from the dictionary
+            phonetic_pronunciations = pronouncing_dict[word]
+            # Convert the recognized text to its phonetic pronunciation
+            recognized_pronunciations = [pronouncing_dict[word][0] for word in recognized_words if word in pronouncing_dict]
+            if recognized_pronunciations and recognized_pronunciations[0] not in phonetic_pronunciations:
+                mispronounced_words.append(word)
+    return mispronounced_words
+
+# Function to start pronunciation detection
+def start_detection():
+    global results  # Declare results as global
+    recognizer = sr.Recognizer()
+    engine = pyttsx3.init()
+
+    while True:
+        with sr.Microphone() as source:
+            print("Listening...")
+            recognizer.adjust_for_ambient_noise(source)
+            audio = recognizer.listen(source)
+
+        try:
+            print("Processing...")
+            # Use Google Speech Recognition for recognizing speech
+            recognized_text = recognizer.recognize_google(audio)
+            print("Recognized text:", recognized_text)
+
+            if recognized_text.lower() == "exit":
+                print("Exiting from the system...")
+                engine.say("Exiting from the system.")
+                engine.runAndWait()
+                analyze_results(results)  # Analyze results before exiting
+                break
+
+            # Detect mispronunciations
+            mispronounced_words = detect_mispronunciations(recognized_text)
+            result = {'text': recognized_text, 'mispronounced': bool(mispronounced_words)}  # Create result entry
+            results.append(result)  # Append result to results list
+            
+            if mispronounced_words:
+                engine.say("You mispronounced the following words:")
+                for word in mispronounced_words:
+                    engine.say(word)
+            else:
+                engine.say("Pronunciation is correct.")
+
+            engine.runAndWait()
+
+        except sr.UnknownValueError:
+            engine.say("Sorry, I could not understand what you said.")
+            engine.runAndWait()
+        except sr.RequestError:
+            engine.say("Could not request results. Please check your internet connection.")
+            engine.runAndWait()
+        except Exception as e:
+            engine.say("An error occurred: " + str(e))
+            engine.runAndWait()
+
+def analyze_results(results):
+    global mispronounced_count  # Declare mispronounced_count as global
+    mispronounced_count = sum(result['mispronounced'] for result in results)
+
+    # Generate additional charts
+    generate_pie_chart(results)
+    generate_confusion_matrix(results)
+    calculate_bleu_score(results)
+
+# Function to generate pie chart
+def generate_pie_chart(results):
+    labels = ['Correct Pronunciation', 'Mispronunciation']
+    counts = [len(results) - mispronounced_count, mispronounced_count]
+
+    plt.figure()
+    plt.pie(counts, labels=labels, autopct='%1.1f%%')
+    plt.title('Mispronunciation Detection Result Distribution')
+    plt.show()
+
+# Function to generate confusion matrix
+def generate_confusion_matrix(results):
+    recognized_labels = [result['text'] for result in results]
+    actual_labels = [result['text'] if result['mispronounced'] else '' for result in results]
+
+    cm = confusion_matrix(actual_labels, recognized_labels)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=np.unique(actual_labels), yticklabels=np.unique(actual_labels))
+    plt.xlabel('Recognized Words')
+    plt.ylabel('Actual Words')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+# Function to calculate BLEU score
+def calculate_bleu_score(results):
+    recognized_words = [result['text'] for result in results]
+    actual_words = [result['text'] if result['mispronounced'] else '' for result in results]
+    bleu_scores = [sentence_bleu([actual.split()], recognized.split()) for actual, recognized in zip(actual_words, recognized_words)]
+    average_bleu_score = np.mean(bleu_scores)
+    print("Average BLEU Score:", average_bleu_score)
+
+# Create the main window
+root = tk.Tk()
+root.title("Mispronunciation Detection")
+root.geometry("400x300")
+root.configure(bg='black')
+
+# Create a label for voice emoji or sticker
+label = tk.Label(root, text="😊", font=('Arial', 24), bg='black', fg='white')
+label.pack(pady=20)
+start_button = tk.Button(root, text="Start", command=start_detection, font=('Arial', 14), bg='green', fg='white')
+start_button.pack(pady=20)
+
+# Greeting message
+engine = pyttsx3.init()
+engine.say("Hello! Welcome to our pronunciation detection system.")
+engine.say("To start, please click on the button and pronounce a word.")
+engine.runAndWait()
+
+root.mainloop()
